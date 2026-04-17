@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Esher — Prediction (NK vs CK)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0a0a0a; color: #eee; font-family: 'Menlo', 'Consolas', monospace; font-size: 13px; }
+  body { padding: 8px; max-width: 560px; margin: 0 auto; }
+
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .topbar { justify-content: space-between; font-size: 11px; }
+
+  .status { padding: 3px 8px; border-radius: 4px; background: #333; }
+  .status.on  { background: #1b5e20; color: #c8e6c9; }
+  .status.off { background: #b71c1c; color: #ffcdd2; }
+
+  select, button { background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 11px; cursor: pointer; }
+  button:hover { background: #2a2a2a; border-color: #555; }
+  button.primary { background: #1565c0; border-color: #29abe2; font-weight: bold; }
+  button.primary:hover { background: #1976d2; }
+
+  /* Prix courant */
+  .price-box { background: #111; border-left: 3px solid #444; padding: 10px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .price-box.up   { border-left-color: #29abe2; }
+  .price-box.down { border-left-color: #c03;    }
+  .price { font-size: 22px; font-weight: bold; letter-spacing: 1px; }
+  .last-digit { font-size: 36px; font-weight: bold; line-height: 1; padding: 0 14px; border-radius: 6px; background: #222; min-width: 60px; text-align: center; }
+  .last-digit.up   { background: #29abe2; color: #000; }
+  .last-digit.down { background: #c03;    color: #fff; }
+
+  /* Bandeau chiffres */
+  .digit-strip { display: flex; gap: 2px; margin: 6px 0; }
+  .digit-strip .d { flex: 1; text-align: center; padding: 4px 0; font-weight: bold; border-radius: 3px; background: #222; font-size: 11px; min-width: 0; }
+  .digit-strip .d.up   { background: #29abe2; color: #000; }
+  .digit-strip .d.down { background: #c03;    color: #fff; }
+
+  /* Graphique principal - fond clair pour visibilité */
+  .chart-box { background: #f8f8f8; border-radius: 4px; padding: 6px; height: 280px; position: relative; }
+  .chart-box-hist { background: #f8f8f8; border-radius: 4px; padding: 4px; height: 100px; margin-top: 4px; position: relative; }
+
+  /* Légende */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #aaa; padding: 4px 2px; justify-content: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .sw { display: inline-block; width: 18px; height: 2px; position: relative; }
+  .legend .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+
+  /* Barre de signal */
+  .signal-bar { padding: 10px 12px; border-radius: 4px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: all 0.4s; background: #333; margin-top: 6px; }
+  .signal-bar.buy          { background: linear-gradient(135deg, #1976d2, #42a5f5); box-shadow: 0 0 8px rgba(41,171,226,0.4); }
+  .signal-bar.strong-buy   { background: linear-gradient(135deg, #0d47a1, #1565c0); box-shadow: 0 0 16px rgba(41,171,226,0.8); }
+  .signal-bar.sell         { background: linear-gradient(135deg, #c62828, #d32f2f); box-shadow: 0 0 8px rgba(204,0,51,0.4); }
+  .signal-bar.strong-sell  { background: linear-gradient(135deg, #b71c1c, #c62828); box-shadow: 0 0 16px rgba(204,0,51,0.8); }
+  .signal-bar.lean-up      { background: linear-gradient(135deg, #1976d2, #64b5f6); }
+  .signal-bar.lean-down    { background: linear-gradient(135deg, #d32f2f, #ef5350); }
+  .signal-icon  { font-size: 22px; }
+  .signal-text  { font-size: 14px; flex: 1; text-align: center; }
+  .signal-score { font-size: 12px; opacity: 0.85; }
+
+  /* Détails */
+  .details { font-size: 11px; color: #888; padding: 6px 8px; background: #111; border-radius: 4px; line-height: 1.6; margin-top: 6px; }
+  .details .lbl { color: #666; }
+  .details b { color: #ccc; }
+
+  /* Avertissement */
+  .warn { padding: 6px 8px; background: rgba(255,180,0,0.08); border-left: 3px solid #c90; color: #fb0; font-size: 10px; border-radius: 3px; line-height: 1.5; margin-top: 6px; }
+
+  /* Backtest modal */
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 100; padding: 10px; }
+  .modal-mask.open { display: flex; }
+  .modal { background: #111; border: 1px solid #333; border-radius: 6px; padding: 16px; max-width: 720px; width: 100%; max-height: 90vh; overflow-y: auto; color: #eee; }
+  .modal h2 { font-size: 14px; margin-bottom: 10px; color: #29abe2; }
+  .modal .close { float: right; background: #333; border: none; padding: 4px 10px; color: #eee; cursor: pointer; border-radius: 3px; }
+  .modal .bt-progress { background: #222; height: 14px; border-radius: 3px; overflow: hidden; margin: 8px 0; }
+  .modal .bt-progress > div { background: linear-gradient(90deg, #1565c0, #29abe2); height: 100%; width: 0%; transition: width 0.15s; }
+  .modal table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+  .modal th, .modal td { padding: 5px 6px; text-align: right; border-bottom: 1px solid #222; }
+  .modal th { color: #888; font-weight: normal; text-align: left; }
+  .modal td:first-child { text-align: left; color: #ccc; }
+  .modal .good { color: #4fc3f7; }
+  .modal .bad  { color: #ef5350; }
+  .modal .neutral { color: #aaa; }
+  .modal .conclusion { margin-top: 14px; padding: 10px; background: #0d0d0d; border-left: 3px solid #c90; font-size: 11px; line-height: 1.5; color: #ddd; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="row topbar">
+  <span id="status" class="status off">Connecting...</span>
+  <select id="symbolSelect">
+    <option value="R_10"  selected>Volatility 10</option>
+    <option value="R_25">Volatility 25</option>
+    <option value="R_50">Volatility 50</option>
+    <option value="R_75">Volatility 75</option>
+    <option value="R_100">Volatility 100</option>
+    <option value="R_10_1S">Vol 10 (1s)</option>
+    <option value="R_100_1S">Vol 100 (1s)</option>
+  </select>
+  <button class="primary" id="btnBacktest">▶ BACKTEST</button>
+</div>
+
+<div id="priceBox" class="price-box">
+  <div class="price" id="priceText">—</div>
+  <div class="last-digit" id="lastDigit">—</div>
+</div>
+
+<div class="digit-strip" id="digitStrip"></div>
+
+<div class="chart-box"><canvas id="mainChart"></canvas></div>
+
+<div class="legend">
+  <span><span class="sw" style="background:#000;height:3px"></span>Prediction (NK/CK + Even/Odd)</span>
+  <span style="color:#0b4;font-weight:bold">▲ = BUY signal</span>
+  <span style="color:#c22;font-weight:bold">▼ = SELL signal</span>
+  <span style="color:#888">— — line at 5 = crossover level</span>
+</div>
+
+<div class="chart-box-hist"><canvas id="histChart"></canvas></div>
+
+<div id="signalBar" class="signal-bar">
+  <span class="signal-icon" id="signalIcon">⏸</span>
+  <span class="signal-text" id="signalText">WAITING</span>
+  <span class="signal-score" id="signalScore">[0]</span>
+</div>
+
+<div class="details" id="details">
+  <span class="lbl">Ticks:</span> <b id="statTicks">0</b>
+  &nbsp;<span class="lbl">Score:</span> <b id="statScore">0</b>
+  &nbsp;<span class="lbl">NK:</span> <b id="statNK">→</b>
+  &nbsp;<span class="lbl">CS:</span> <b id="statCS">→</b>
+  &nbsp;<span class="lbl">Hot:</span> <b id="statHot">—</b>
+  &nbsp;<span class="lbl">Cold:</span> <b id="statCold">—</b>
+</div>
+
+<div class="warn" style="border-left-color:#29abe2;background:rgba(41,171,226,0.08);color:#ccc">
+  <b style="color:#29abe2">HOW TO READ:</b><br>
+  <b style="color:#0b4">▲ Green triangle</b> = line crosses ABOVE midline → <b>BUY signal</b> (UP trend starting)<br>
+  <b style="color:#c22">▼ Red triangle</b> = line crosses BELOW midline → <b>SELL signal</b> (DOWN trend starting)<br>
+  <b>Line high (7-10)</b> = strong UP trend in progress &nbsp;|&nbsp; <b>Line low (0-3)</b> = strong DOWN trend<br>
+  <span style="color:#888">Based on NK/CK crossover (4 lines) + Even/Odd position (2 lines). Demo only.</span>
+</div>
+
+<!-- Backtest modal -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <button class="close" id="btnClose">✕</button>
+    <h2>Backtest — Esher Strategy (7 blocks, 5-tick horizon)</h2>
+    <div id="btStatus" style="font-size:11px;color:#888;">Initializing...</div>
+    <div class="bt-progress"><div id="btProgress"></div></div>
+    <div id="btResults"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+ *  ESHER ANALYZER — REBUILD v2
+ *  - Reproduction des 7 blocs du score original
+ *  - WebSocket Deriv live
+ *  - Backtest 100k ticks intégré
+ *  - 5ème ligne (prix normalisé) + histogramme des chiffres
+ * ============================================================ */
+
+// --- CONFIG -------------------------------------------------
+const WINDOW_CHART = 25;       // ← 25 ticks au lieu de 20
+const WINDOW_SEQ   = 10;
+const HORIZON      = 5;
+const MAX_HISTORY  = 50;
+const AXIS_MAX     = WINDOW_CHART + 0.5;
+
+const DERIV_APP_ID = 1089;
+const DERIV_WS = 'wss://ws.binaryws.com/websockets/v3?app_id=' + DERIV_APP_ID;
+
+const TIC_UP   = {0:0, 1:1, 2:2, 3:3, 4:4, 5:5, 6:0, 7:3, 8:4, 9:1};
+const TIC_DOWN = {0:5, 1:2, 2:1, 3:4, 4:3, 5:0, 6:5, 7:4, 8:3, 9:2};
+
+// --- ÉTAT ---------------------------------------------------
+const state = {
+  symbol: 'R_10',
+  prices: [],
+  digits: [],
+  ws: null,
+  reconnectTimer: null,
+  tickCount: 0,
+};
+
+// --- MATHS --------------------------------------------------
+
+function numSlope(arr) {
+  if (arr.length < 2) return 0;
+  const L = arr.length;
+  let sx=0, sy=0, sxy=0, sx2=0;
+  for (let i=0; i<L; i++) { sx+=i; sy+=arr[i]; sxy+=i*arr[i]; sx2+=i*i; }
+  const d = L*sx2 - sx*sx;
+  return d === 0 ? 0 : (L*sxy - sx*sy) / d;
+}
+
+function lineSlope(arr, n) {
+  if (arr.length < 2) return 0;
+  const pts = arr.slice(-Math.min(n, arr.length));
+  return numSlope(pts.map(p => p.y));
+}
+
+function lineDir(arr) {
+  if (arr.length < 2) return { dir:0, lastY:5, prevY:5 };
+  const last = arr[arr.length-1].y, prev = arr[arr.length-2].y;
+  return { dir: last>prev?1:(last<prev?-1:0), lastY:last, prevY:prev };
+}
+
+function lineStreak(arr) {
+  if (arr.length < 2) return { dir:0, count:0 };
+  let dir = 0, count = 0;
+  for (let i = arr.length-1; i >= 1; i--) {
+    const d = arr[i].y > arr[i-1].y ? 1 : (arr[i].y < arr[i-1].y ? -1 : 0);
+    if (d === 0) break;
+    if (dir === 0) dir = d;
+    if (d === dir) count++; else break;
+  }
+  return { dir, count };
+}
+
+const sign = x => x > 0 ? 1 : (x < 0 ? -1 : 0);
+
+// --- RECONSTRUCTION DES 4 LIGNES ---------------------------
+
+function buildChartArrays(prices, digits, N, win) {
+  const nk=[], cs=[], ns=[], ck=[];
+  const start = Math.max(1, N - win + 1);
+  let x = 1;
+  for (let i = start; i <= N; i++, x++) {
+    const d = digits[i];
+    const prU = prices[i] > prices[i-1];
+    const prD = prices[i] < prices[i-1];
+    const odd = (d & 1) === 1;
+    // label = le chiffre réel, pour l'afficher dans la boule
+    if      (odd  && prU) ns.push({ x, y: d,      label: d });
+    else if (odd  && prD) nk.push({ x, y: 10 - d, label: d });
+    else if (!odd && prU) cs.push({ x, y: d,      label: d });
+    else if (!odd && prD) ck.push({ x, y: 10 - d, label: d });
+  }
+  return { nk, cs, ns, ck };
+}
+
+function buildReconstructedSeqs(prices, digits, N, win) {
+  const nkSeq=[], csSeq=[], nsSeq=[], ckSeq=[];
+  const start = Math.max(1, N - win + 1);
+  for (let i = start; i <= N; i++) {
+    const d = digits[i];
+    const prU = prices[i] > prices[i-1];
+    const prD = prices[i] < prices[i-1];
+    const odd = (d & 1) === 1;
+    let ticV = null;
+    if (prU) ticV = TIC_UP[d];
+    else if (prD) ticV = TIC_DOWN[d];
+    else continue;
+    if      (odd  && prD) nkSeq.push(ticV);
+    else if (!odd && prU) csSeq.push(ticV);
+    else if (odd  && prU) nsSeq.push(ticV);
+    else if (!odd && prD) ckSeq.push(ticV);
+  }
+  return { nkSeq, csSeq, nsSeq, ckSeq };
+}
+
+// --- SCORE ESHER (7 BLOCS) ---------------------------------
+
+function computeEsherScore(prices, digits, N) {
+  const { nk, cs } = buildChartArrays(prices, digits, N, WINDOW_CHART);
+  const { nkSeq, csSeq, nsSeq, ckSeq } = buildReconstructedSeqs(prices, digits, N, WINDOW_SEQ);
+
+  const slpNKdig = numSlope(nkSeq);
+  const slpCSdig = numSlope(csSeq);
+  const slpNSdig = numSlope(nsSeq);
+  const slpCKdig = numSlope(ckSeq);
+
+  const lastNKtic = nkSeq.length ? nkSeq[nkSeq.length-1] : null;
+  const lastCStic = csSeq.length ? csSeq[csSeq.length-1] : null;
+
+  const slpNK5  = lineSlope(nk, 5);
+  const slpNK10 = lineSlope(nk, 10);
+  const slpCS5  = lineSlope(cs, 5);
+  const slpCS10 = lineSlope(cs, 10);
+
+  const dNK = lineDir(nk);
+  const dCS = lineDir(cs);
+  const sNK = lineStreak(nk);
+  const sCS = lineStreak(cs);
+
+  let score = 0;
+
+  // BLOC 1
+  const digNKdir = slpNKdig > 0.2 ? 1 : (slpNKdig < -0.2 ? -1 : 0);
+  const digCSdir = slpCSdig > 0.2 ? 1 : (slpCSdig < -0.2 ? -1 : 0);
+  if (digNKdir && digCSdir) score += digNKdir === digCSdir ? digNKdir*10 : digNKdir*2;
+  else if (digNKdir) score += digNKdir*6;
+  else if (digCSdir) score += digCSdir*6;
+
+  // BLOC 2
+  if (lastNKtic !== null) {
+    if      (lastNKtic >= 4 && slpNKdig >  0) score += 3;
+    else if (lastNKtic >= 4 && slpNKdig >= 0) score += 1;
+    else if (lastNKtic <= 1 && slpNKdig <  0) score -= 3;
+    else if (lastNKtic <= 2 && slpNKdig <= 0) score -= 1;
+  }
+  if (lastCStic !== null) {
+    if      (lastCStic >= 4 && slpCSdig >  0) score += 3;
+    else if (lastCStic >= 4 && slpCSdig >= 0) score += 1;
+    else if (lastCStic <= 1 && slpCSdig <  0) score -= 3;
+    else if (lastCStic <= 2 && slpCSdig <= 0) score -= 1;
+  }
+
+  // BLOC 3
+  if      (slpNK5 > 0 && slpNK10 > 0) score += 2;
+  else if (slpNK5 < 0 && slpNK10 < 0) score -= 2;
+  else                                score -= 1;
+  if      (slpCS5 > 0 && slpCS10 > 0) score += 2;
+  else if (slpCS5 < 0 && slpCS10 < 0) score -= 2;
+
+  // BLOC 4
+  if (digNKdir && sign(slpNK5) === digNKdir) score += digNKdir*2;
+  if (digCSdir && sign(slpCS5) === digCSdir) score += digCSdir*2;
+
+  // BLOC 5
+  const digNSdir = slpNSdig > 0.2 ? 1 : (slpNSdig < -0.2 ? -1 : 0);
+  const digCKdir = slpCKdig > 0.2 ? 1 : (slpCKdig < -0.2 ? -1 : 0);
+  if (digNSdir && digNSdir ===  digNKdir) score += digNKdir*2;
+  if (digCKdir && digCKdir === -digCSdir) score += digCSdir*1;
+
+  // BLOC 6
+  if      (sNK.count >= 3) score += sNK.dir*2;
+  else if (sNK.count >= 2) score += sNK.dir*1;
+  if      (sCS.count >= 3) score += sCS.dir*2;
+  else if (sCS.count >= 2) score += sCS.dir*1;
+
+  // BLOC 7
+  if      (dNK.lastY >= 8) score += 2;
+  else if (dNK.lastY >= 7) score += 1;
+  if      (dNK.lastY <= 2) score -= 2;
+  else if (dNK.lastY <= 3) score -= 1;
+
+  // Start boost
+  const isStart = N >= 1 && Math.abs(digits[N] - digits[N-1]) === 1;
+  if (isStart && score !== 0) score = Math.round(score*1.3);
+
+  if (score >  30) score =  30;
+  if (score < -30) score = -30;
+
+  return { score, isStart, dNK, dCS };
+}
+
+// ============================================================
+//  PREDICTION: DOUBLE CROSSOVER NK/CK + EVEN/ODD
+//
+//  Signal 1 (60%): NK vs CK crossover (from 4-line version)
+//    NK above CK → UP, NK below CK → DOWN
+//
+//  Signal 2 (40%): Even/Odd from simplified 2-line version
+//    tic = +digit when price UP, -digit when price DOWN
+//    Even line = tic values on even digits
+//    Odd line  = tic values on odd digits
+//    Both positive → market UP. Both negative → market DOWN.
+//    Odd above Even → odd digits leading UP trend
+//
+//  Combined: double crossover = stronger, more reliable signal
+// ============================================================
+function computeFifthLine(prices, digits, N, win) {
+  const { nk, cs, ns, ck } = buildChartArrays(prices, digits, N, win);
+
+  // Build Even/Odd arrays (same logic as simplified digits.js)
+  const evenArr = [], oddArr = [];
+  const startIdx = Math.max(1, N - win + 1);
+  let xPos = 1;
+  for (let i = startIdx; i <= N; i++, xPos++) {
+    const d = digits[i];
+    const prU = prices[i] > prices[i - 1];
+    const prD = prices[i] < prices[i - 1];
+    // tic = +digit if UP, -digit if DOWN (same as original)
+    const ticVal = prU ? d : (prD ? -d : 0);
+    if ((d & 1) === 0) {
+      evenArr.push({ x: xPos, y: ticVal });
+    } else {
+      oddArr.push({ x: xPos, y: ticVal });
+    }
+  }
+
+  function lastYat(arr, x) {
+    let y = null;
+    for (const p of arr) { if (p.x > x) break; y = p.y; }
+    return y;
+  }
+
+  const line = [];
+  for (let x = 1; x <= win; x++) {
+    const i = startIdx + x - 1;   // index absolu dans prices[]
+
+    // --- Signal 1 (40%): NK vs CK crossover ---
+    const yNK = lastYat(nk, x);
+    const yCK = lastYat(ck, x);
+    let sig4 = 0;
+    if (yNK !== null && yCK !== null) {
+      sig4 = (yNK - yCK) / 10;
+    }
+
+    // --- Signal 2 (30%): Even/Odd position ---
+    const yOdd  = lastYat(oddArr, x);
+    const yEven = lastYat(evenArr, x);
+    let sig2 = 0;
+    if (yOdd !== null && yEven !== null) {
+      const avgPos = (yOdd + yEven) / 2;
+      const crossover = (yOdd - yEven);
+      sig2 = 0.7 * avgPos / 9 + 0.3 * crossover / 18;
+    } else if (yOdd !== null) sig2 = yOdd / 9;
+    else if (yEven !== null) sig2 = yEven / 9;
+    sig2 = Math.max(-1, Math.min(1, sig2));
+
+    // --- Signal 3 (30%): Price direction (last 6 ticks) ---
+    // Prevents flat line during strong price trends
+    let sig3 = 0;
+    if (i >= 2 && i <= N) {
+      const lookback = Math.min(6, i);
+      let ups = 0, dns = 0;
+      for (let k = i - lookback + 1; k <= i; k++) {
+        if (k >= 1) {
+          if (prices[k] > prices[k-1]) ups++;
+          else if (prices[k] < prices[k-1]) dns++;
+        }
+      }
+      const tot = ups + dns;
+      if (tot > 0) sig3 = (ups - dns) / tot;   // [-1, +1]
+    }
+
+    // --- Combined: 40% crossover + 30% even/odd + 30% price ---
+    const dir = 0.4 * sig4 + 0.3 * sig2 + 0.3 * sig3;
+
+    // Map to Y
+    let y = 5 + dir * 5.5;
+    if (y > 9.8) y = 9.8;
+    if (y < 0.2) y = 0.2;
+
+    let cat;
+    if      (y >= 8.5) cat = 'STRONG UP';
+    else if (y >= 6.5) cat = 'UP';
+    else if (y >= 5.5) cat = 'lean UP';
+    else if (y >= 4.5) cat = 'WAIT';
+    else if (y >= 3.5) cat = 'lean DOWN';
+    else if (y >= 1.5) cat = 'DOWN';
+    else               cat = 'STRONG DOWN';
+
+    line.push({ x, y: Math.round(y * 10) / 10, cat });
+  }
+  return line;
+}
+
+// --- HISTOGRAMME DES CHIFFRES ------------------------------
+
+function computeDigitFrequency(digits, N, win) {
+  const freq = new Array(10).fill(0);
+  const start = Math.max(0, N - win + 1);
+  for (let i = start; i <= N; i++) freq[digits[i]]++;
+  return freq;
+}
+
+// --- GRAPHIQUE PRINCIPAL -----------------------------------
+
+let chart = null;
+
+function initChart() {
+  // Enregistrer le plugin datalabels pour afficher les chiffres dans les boules
+  Chart.register(ChartDataLabels);
+
+  const ctx = document.getElementById('mainChart').getContext('2d');
+
+  // Config commune pour les datalabels des 4 lignes principales
+  const digitLabelYellow = {
+    display: true, color: '#000', font: { weight: 'bold', size: 9 },
+    formatter: (v) => (v && v.label !== undefined) ? v.label : ''
+  };
+  const digitLabelGreen = {
+    display: true, color: '#000', font: { weight: 'bold', size: 9 },
+    formatter: (v) => (v && v.label !== undefined) ? v.label : ''
+  };
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        // NK: ligne noire pleine, markers jaunes avec chiffre
+        { label: 'NK', data: [], hidden: true, borderColor: '#000', backgroundColor: 'gold',
+          borderWidth: 2.5, pointRadius: 9, pointBackgroundColor: 'gold',
+          pointBorderColor: '#000', pointBorderWidth: 1.5, pointHoverRadius: 11, tension: 0,
+          datalabels: digitLabelYellow },
+        // CS: ligne noire pointillée, markers jaunes avec chiffre
+        { label: 'CS', data: [], hidden: true, borderColor: '#000', backgroundColor: 'gold',
+          borderWidth: 2.5, borderDash: [5, 4], pointRadius: 9, pointBackgroundColor: 'gold',
+          pointBorderColor: '#000', pointBorderWidth: 1.5, pointHoverRadius: 11, tension: 0,
+          datalabels: digitLabelYellow },
+        // NS : ligne verte claire pleine, markers verts clairs avec chiffre
+        { label: 'NS', data: [], hidden: true, borderColor: '#5cb85c', backgroundColor: '#7dcf7d',
+          borderWidth: 2.5, pointRadius: 9, pointBackgroundColor: '#7dcf7d',
+          pointBorderColor: '#2d6f2d', pointBorderWidth: 1.5, pointHoverRadius: 11, tension: 0,
+          datalabels: digitLabelGreen },
+        // CK : ligne verte claire pointillée, markers verts clairs avec chiffre
+        { label: 'CK', data: [], hidden: true, borderColor: '#5cb85c', backgroundColor: '#7dcf7d',
+          borderWidth: 2.5, borderDash: [5, 4], pointRadius: 9, pointBackgroundColor: '#7dcf7d',
+          pointBorderColor: '#2d6f2d', pointBorderWidth: 1.5, pointHoverRadius: 11, tension: 0,
+          datalabels: digitLabelGreen },
+        // 5ème ligne : PREDICTION — ligne noire
+        { label: 'Prediction', data: [], borderColor: 'rgba(0, 0, 0, 0.9)', backgroundColor: 'rgba(0, 0, 0, 0.08)',
+          borderWidth: 4, pointRadius: 5, pointHoverRadius: 8,
+          pointBackgroundColor: '#000', pointBorderColor: '#fff', pointBorderWidth: 1.5,
+          tension: 0.15,
+          fill: true,
+          datalabels: { display: false } },
+        // 6ème dataset : CROSSOVER ARROWS (▲ UP vert / ▼ DOWN rouge)
+        { label: 'Crossover', data: [], type: 'scatter',
+          pointRadius: 14, pointHoverRadius: 16,
+          pointBackgroundColor: (ctx) => {
+            const v = ctx.raw;
+            return v && v.dir === 'up' ? 'rgba(0, 180, 80, 0.9)' : 'rgba(220, 30, 30, 0.9)';
+          },
+          pointBorderColor: '#fff', pointBorderWidth: 2,
+          pointStyle: (ctx) => {
+            const v = ctx.raw;
+            return v && v.dir === 'up' ? 'triangle' : 'triangle';
+          },
+          pointRotation: (ctx) => {
+            const v = ctx.raw;
+            return v && v.dir === 'up' ? 0 : 180;
+          },
+          datalabels: {
+            display: true,
+            color: '#fff',
+            font: { weight: 'bold', size: 10 },
+            formatter: (v) => v && v.dir === 'up' ? '▲' : '▼'
+          }
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: { display: false },
+        tooltip: { enabled: true, backgroundColor: '#000', bodyColor: '#fff', titleColor:'#29abe2',
+                   borderColor: '#555', borderWidth: 1, titleFont: {size: 10}, bodyFont: {size: 10},
+                   callbacks: {
+                     title: (items) => 'Tick ' + items[0].parsed.x,
+                     label: (item) => {
+                       const ds = item.dataset.label;
+                       const v = item.raw;
+                       if (ds === 'Prediction') return 'Trend: ' + v.cat + ' (y=' + v.y.toFixed(1) + ')';
+                       if (ds === 'Crossover') return v.dir === 'up' ? '▲ BUY SIGNAL' : '▼ SELL SIGNAL';
+                       return ds + ' digit=' + (v.label !== undefined ? v.label : '?') + ' y=' + v.y;
+                     }
+                   }
+                 },
+      },
+      parsing: false,
+      scales: {
+        x: { type: 'linear', min: 0.5, max: AXIS_MAX,
+             ticks: { color: '#555', font: {size: 9}, stepSize: 1, precision: 0 },
+             grid: { color: '#ddd' } },
+        y: { min: -0.5, max: 10.5,
+             ticks: { color: '#555', font: {size: 9}, stepSize: 1 },
+             grid: { color: '#ddd' } },
+      },
+    },
+    // Plugin: horizontal line at y=5 (crossover level) + zones
+    plugins: [{
+      id: 'crossoverLine',
+      beforeDraw: (chart) => {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea) return;
+        const y5 = scales.y.getPixelForValue(5);
+        const y8 = scales.y.getPixelForValue(8);
+        const y2 = scales.y.getPixelForValue(2);
+        ctx.save();
+        // Green zone (above 5)
+        ctx.fillStyle = 'rgba(60, 180, 100, 0.06)';
+        ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, y5 - chartArea.top);
+        // Red zone (below 5)
+        ctx.fillStyle = 'rgba(220, 50, 50, 0.06)';
+        ctx.fillRect(chartArea.left, y5, chartArea.right - chartArea.left, chartArea.bottom - y5);
+        // Dashed line at y=5
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y5);
+        ctx.lineTo(chartArea.right, y5);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Labels
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = 'rgba(0, 140, 60, 0.7)';
+        ctx.fillText('▲ UP ZONE', chartArea.left + 6, chartArea.top + 14);
+        ctx.fillStyle = 'rgba(200, 40, 40, 0.7)';
+        ctx.fillText('▼ DOWN ZONE', chartArea.left + 6, chartArea.bottom - 6);
+        ctx.fillStyle = 'rgba(100, 100, 100, 0.8)';
+        ctx.fillText('— CROSSOVER LEVEL —', chartArea.left + 6, y5 - 5);
+        ctx.restore();
+      }
+    }]
+  });
+}
+
+function renderChart(nk, cs, ns, ck, fifth) {
+  chart.data.datasets[0].data = nk;
+  chart.data.datasets[1].data = cs;
+  chart.data.datasets[2].data = ns;
+  chart.data.datasets[3].data = ck;
+  chart.data.datasets[4].data = fifth;
+
+  // Detect crossovers: moments where the line crosses y=5
+  const arrows = [];
+  for (let i = 1; i < fifth.length; i++) {
+    const prev = fifth[i-1].y;
+    const curr = fifth[i].y;
+    // Crossing UP: was below 5 (or at 5), now above 5
+    if (prev <= 5 && curr > 5.5) {
+      arrows.push({ x: fifth[i].x, y: curr, dir: 'up' });
+    }
+    // Crossing DOWN: was above 5 (or at 5), now below 5
+    if (prev >= 5 && curr < 4.5) {
+      arrows.push({ x: fifth[i].x, y: curr, dir: 'down' });
+    }
+  }
+  chart.data.datasets[5].data = arrows;
+
+  chart.update('none');
+}
+
+// --- HISTOGRAMME CHART -------------------------------------
+
+let histChart = null;
+
+function initHistChart() {
+  const ctx = document.getElementById('histChart').getContext('2d');
+  histChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['0','1','2','3','4','5','6','7','8','9'],
+      datasets: [{
+        label: 'Occurrences',
+        data: [0,0,0,0,0,0,0,0,0,0],
+        backgroundColor: ['#1976d2','#c62828','#1976d2','#c62828','#1976d2','#c62828','#1976d2','#c62828','#1976d2','#c62828'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: true, backgroundColor: '#000', bodyColor: '#fff' },
+      },
+      scales: {
+        x: { ticks: { color: '#555', font: {size: 10, weight: 'bold'} }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: '#555', font: {size: 9}, precision: 0, stepSize: 1 }, grid: { color: '#eee' } }
+      }
+    }
+  });
+}
+
+function renderHistChart(freq) {
+  histChart.data.datasets[0].data = freq;
+  histChart.update('none');
+}
+
+// --- UI -----------------------------------------------------
+
+function updateUI(scoreInfo, freq) {
+  document.getElementById('statTicks').textContent = state.tickCount;
+  document.getElementById('statScore').textContent = scoreInfo.score;
+
+  // Chaud / froid
+  if (freq && freq.length === 10) {
+    let maxI = 0, minI = 0;
+    for (let i = 1; i < 10; i++) {
+      if (freq[i] > freq[maxI]) maxI = i;
+      if (freq[i] < freq[minI]) minI = i;
+    }
+    document.getElementById('statHot').textContent  = maxI + ' (' + freq[maxI] + ')';
+    document.getElementById('statCold').textContent = minI + ' (' + freq[minI] + ')';
+  }
+
+  const N = state.prices.length - 1;
+  if (N >= 1) {
+    const price = state.prices[N];
+    const digit = state.digits[N];
+    const prU = state.prices[N] > state.prices[N-1];
+    const prD = state.prices[N] < state.prices[N-1];
+
+    document.getElementById('priceText').textContent = price.toFixed(3);
+    document.getElementById('lastDigit').textContent = digit;
+
+    const priceBox = document.getElementById('priceBox');
+    const lastD = document.getElementById('lastDigit');
+    priceBox.classList.remove('up','down');
+    lastD.classList.remove('up','down');
+    if      (prU) { priceBox.classList.add('up');   lastD.classList.add('up'); }
+    else if (prD) { priceBox.classList.add('down'); lastD.classList.add('down'); }
+  }
+
+  // Strip
+  const strip = document.getElementById('digitStrip');
+  strip.innerHTML = '';
+  const showN = Math.min(WINDOW_CHART, state.digits.length);
+  const from = state.digits.length - showN;
+  for (let i = from; i < state.digits.length; i++) {
+    const span = document.createElement('span');
+    span.className = 'd';
+    span.textContent = state.digits[i];
+    if (i >= 1) {
+      if      (state.prices[i] > state.prices[i-1]) span.classList.add('up');
+      else if (state.prices[i] < state.prices[i-1]) span.classList.add('down');
+    }
+    strip.appendChild(span);
+  }
+
+  // Barre signal
+  const bar = document.getElementById('signalBar');
+  const icon = document.getElementById('signalIcon');
+  const txt = document.getElementById('signalText');
+  const scTxt = document.getElementById('signalScore');
+  const s = scoreInfo.score;
+  bar.className = 'signal-bar';
+  if      (s >=  15) { bar.classList.add('strong-buy');  icon.textContent='⬆⬆'; txt.textContent='STRONG BUY (5t)'; }
+  else if (s >=   8) { bar.classList.add('buy');         icon.textContent='⬆';  txt.textContent='BUY (5t)'; }
+  else if (s >=   4) { bar.classList.add('lean-up');     icon.textContent='↗';  txt.textContent='lean UP'; }
+  else if (s <= -15) { bar.classList.add('strong-sell'); icon.textContent='⬇⬇'; txt.textContent='STRONG SELL (5t)'; }
+  else if (s <=  -8) { bar.classList.add('sell');        icon.textContent='⬇';  txt.textContent='SELL (5t)'; }
+  else if (s <=  -4) { bar.classList.add('lean-down');   icon.textContent='↘';  txt.textContent='lean DOWN'; }
+  else               {                                   icon.textContent='⏸';  txt.textContent='WAIT'; }
+  if (scoreInfo.isStart) txt.textContent = '⚡ ' + txt.textContent;
+  scTxt.textContent = '[' + s + ']';
+
+  const a = d => d > 0 ? '↑' : (d < 0 ? '↓' : '→');
+  document.getElementById('statNK').textContent = a(scoreInfo.dNK.dir);
+  document.getElementById('statCS').textContent = a(scoreInfo.dCS.dir);
+}
+
+// --- NOUVEAU TICK -------------------------------------------
+
+function onNewTick(price) {
+  state.prices.push(price);
+  state.digits.push(((Math.round(price * 1000) % 10) + 10) % 10);
+  state.tickCount++;
+
+  while (state.prices.length > MAX_HISTORY) { state.prices.shift(); state.digits.shift(); }
+
+  const N = state.prices.length - 1;
+  if (N < WINDOW_CHART) {
+    const loading = { score: 0, isStart: false, dNK:{dir:0,lastY:5}, dCS:{dir:0,lastY:5} };
+    renderChart([], [], [], [], []);
+    renderHistChart([0,0,0,0,0,0,0,0,0,0]);
+    updateUI(loading, null);
+    return;
+  }
+
+  const { nk, cs, ns, ck } = buildChartArrays(state.prices, state.digits, N, WINDOW_CHART);
+  const fifth = computeFifthLine(state.prices, state.digits, N, WINDOW_CHART);
+  const scoreInfo = computeEsherScore(state.prices, state.digits, N);
+  const freq = computeDigitFrequency(state.digits, N, WINDOW_CHART);
+
+  renderChart(nk, cs, ns, ck, fifth);
+  renderHistChart(freq);
+  updateUI(scoreInfo, freq);
+}
+
+// --- WEBSOCKET DERIV ---------------------------------------
+
+function setStatus(txt, on) {
+  const el = document.getElementById('status');
+  el.textContent = txt;
+  el.className = 'status ' + (on ? 'on' : 'off');
+}
+
+function connect() {
+  if (state.ws) { try { state.ws.close(); } catch(e){} }
+  setStatus('Connecting...', false);
+
+  const ws = new WebSocket(DERIV_WS);
+  state.ws = ws;
+
+  ws.onopen = () => {
+    setStatus('Connected – ' + state.symbol, true);
+    state.prices = []; state.digits = []; state.tickCount = 0;
+    ws.send(JSON.stringify({
+      ticks_history: state.symbol, end: 'latest', count: 40, style: 'ticks', subscribe: 1
+    }));
+  };
+
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.error) { setStatus('Error: ' + msg.error.message, false); return; }
+    if (msg.msg_type === 'history') msg.history.prices.forEach(p => onNewTick(parseFloat(p)));
+    if (msg.msg_type === 'tick')    onNewTick(parseFloat(msg.tick.quote));
+  };
+
+  ws.onclose = () => {
+    setStatus('Disconnected – reconnecting 3s', false);
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = setTimeout(connect, 3000);
+  };
+  ws.onerror = () => setStatus('WebSocket Error', false);
+}
+
+// ============================================================
+//  BACKTEST INTÉGRÉ (fusion du script Python en JS)
+//  Génère 100k synthetic R_10 ticks par GBM (σ=10% an, dt=2s)
+//  Applique exactement le même score Esher
+//  Mesure hit-rate vs payout 95%
+// ============================================================
+
+const SECONDS_PER_YEAR = 365.25 * 24 * 3600;
+
+// Box-Muller pour générer N(0,1)
+function gaussian() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function generateR10Ticks(nTicks, S0 = 5634.034, sigmaAnn = 0.10, dtSec = 2.0) {
+  const dtY = dtSec / SECONDS_PER_YEAR;
+  const drift = -0.5 * sigmaAnn * sigmaAnn * dtY;
+  const diff  = sigmaAnn * Math.sqrt(dtY);
+  const prices = new Array(nTicks);
+  const digits = new Array(nTicks);
+  let logP = Math.log(S0);
+  for (let i = 0; i < nTicks; i++) {
+    logP += drift + diff * gaussian();
+    const p = Math.round(Math.exp(logP) * 1000) / 1000;
+    prices[i] = p;
+    digits[i] = ((Math.round(p * 1000) % 10) + 10) % 10;
+  }
+  return { prices, digits };
+}
+
+// Approximation binomiale unilatérale via approx normale (bon pour n grand)
+function binomPGreater(k, n, p = 0.5) {
+  if (n === 0) return 1;
+  const mu = n * p;
+  const sd = Math.sqrt(n * p * (1 - p));
+  const z = (k - 0.5 - mu) / sd;  // correction de continuité
+  // 1 - Phi(z) = 0.5 * erfc(z / sqrt(2))
+  return 0.5 * erfc(z / Math.SQRT2);
+}
+function erfc(x) {
+  // Approximation Chebyshev (Numerical Recipes)
+  const z = Math.abs(x);
+  const t = 1 / (1 + 0.5 * z);
+  const ans = t * Math.exp(
+    -z*z - 1.26551223
+    + t * ( 1.00002368
+    + t * ( 0.37409196
+    + t * ( 0.09678418
+    + t * (-0.18628806
+    + t * ( 0.27886807
+    + t * (-1.13520398
+    + t * ( 1.48851587
+    + t * (-0.82215223
+    + t *   0.17087277 )))))))));
+  return x >= 0 ? ans : 2 - ans;
+}
+
+async function runBacktest() {
+  const modal = document.getElementById('modalMask');
+  const bar   = document.getElementById('btProgress');
+  const statusEl = document.getElementById('btStatus');
+  const resEl = document.getElementById('btResults');
+  modal.classList.add('open');
+  bar.style.width = '0%';
+  resEl.innerHTML = '';
+
+  const N_TICKS = 100000;
+  const PAYOUT  = 0.95;
+
+  // Génération
+  statusEl.textContent = 'Generating ' + N_TICKS.toLocaleString('fr') + ' synthetic R_10 ticks (GBM σ=10%, dt=2s)...';
+  await sleep(30);
+  const { prices, digits } = generateR10Ticks(N_TICKS);
+  bar.style.width = '5%';
+
+  // Backtest
+  statusEl.textContent = 'Computing Esher score at each position, comparing with outcome N+5...';
+  await sleep(30);
+
+  const bands = [
+    { label: 'STRONG BUY  (score ≥ +15)', cond: s => s >= 15,   bet: 'UP' },
+    { label: 'BUY         (score ≥ +8) ', cond: s => s >= 8,    bet: 'UP' },
+    { label: 'lean UP     (score ≥ +4) ', cond: s => s >= 4,    bet: 'UP' },
+    { label: 'WAIT        (-4 < s < +4)', cond: s => s > -4 && s < 4, bet: null },
+    { label: 'lean DOWN   (score ≤ -4) ', cond: s => s <= -4,   bet: 'DN' },
+    { label: 'SELL        (score ≤ -8) ', cond: s => s <= -8,   bet: 'DN' },
+    { label: 'STRONG SELL (score ≤ -15)', cond: s => s <= -15,  bet: 'DN' },
+  ];
+  const agg = bands.map(b => ({ ...b, n:0, ups:0, downs:0 }));
+
+  const end = prices.length - HORIZON;
+  const step = 2000;
+  let processed = 0;
+  const t0 = performance.now();
+
+  for (let chunkStart = WINDOW_CHART + 1; chunkStart < end; chunkStart += step) {
+    const chunkEnd = Math.min(chunkStart + step, end);
+    for (let N = chunkStart; N < chunkEnd; N++) {
+      const { score } = computeEsherScore(prices, digits, N);
+      const up = prices[N + HORIZON] > prices[N] ? 1 : 0;
+      const dn = prices[N + HORIZON] < prices[N] ? 1 : 0;
+      for (const band of agg) {
+        if (band.cond(score)) { band.n++; band.ups += up; band.downs += dn; }
+      }
+      processed++;
+    }
+    const pct = 5 + Math.round(95 * processed / (end - WINDOW_CHART - 1));
+    bar.style.width = pct + '%';
+    statusEl.textContent = 'Computing... ' + processed.toLocaleString('fr') + ' / ' + (end - WINDOW_CHART - 1).toLocaleString('fr');
+    await sleep(5);
+  }
+  const dt = ((performance.now() - t0) / 1000).toFixed(1);
+  statusEl.textContent = 'Backtest completed in ' + dt + ' s — ' + processed.toLocaleString('fr') + ' ticks analyzed.';
+
+  // Résultats
+  let html = '<table><thead><tr><th>Category</th><th>N</th><th>% UP</th><th>% DOWN</th><th>Hit rate</th><th>p-value</th><th>E[P&L] @95%</th></tr></thead><tbody>';
+  let bestHit = 0, bestCat = '', worstEv = 0;
+  for (const b of agg) {
+    if (b.n === 0) { html += `<tr><td>${b.label}</td><td colspan="6" style="text-align:center;color:#555">—</td></tr>`; continue; }
+    const pUp = b.ups / b.n;
+    const pDn = b.downs / b.n;
+    let hit = '', pVal = '', ev = '', klass = '';
+    if (b.bet === 'UP') {
+      const wins = b.ups;
+      const p = binomPGreater(wins, b.n, 0.5);
+      const h = wins / b.n;
+      const evNum = h * PAYOUT - (1 - h);
+      hit = (h*100).toFixed(2) + '%';
+      pVal = p < 0.001 ? '<0.001' : p.toFixed(3);
+      ev = (evNum*100).toFixed(2) + '%';
+      klass = evNum > 0 ? 'good' : 'bad';
+      if (h > bestHit) { bestHit = h; bestCat = b.label; }
+      if (evNum < worstEv) worstEv = evNum;
+    } else if (b.bet === 'DN') {
+      const wins = b.downs;
+      const p = binomPGreater(wins, b.n, 0.5);
+      const h = wins / b.n;
+      const evNum = h * PAYOUT - (1 - h);
+      hit = (h*100).toFixed(2) + '%';
+      pVal = p < 0.001 ? '<0.001' : p.toFixed(3);
+      ev = (evNum*100).toFixed(2) + '%';
+      klass = evNum > 0 ? 'good' : 'bad';
+      if (h > bestHit) { bestHit = h; bestCat = b.label; }
+      if (evNum < worstEv) worstEv = evNum;
+    } else {
+      hit = '—'; pVal = '—'; ev = '—'; klass = 'neutral';
+    }
+    html += `<tr><td>${b.label}</td><td>${b.n.toLocaleString('fr')}</td>` +
+            `<td>${(pUp*100).toFixed(2)}%</td><td>${(pDn*100).toFixed(2)}%</td>` +
+            `<td class="${klass}">${hit}</td><td>${pVal}</td><td class="${klass}">${ev}</td></tr>`;
+  }
+  html += '</tbody></table>';
+
+  const conclusion = bestHit > 0.5128
+    ? `<span class="good">Max hit rate ${bestCat.trim()} = ${(bestHit*100).toFixed(2)}% > 51.28% breakeven. Positive signal detected (to validate on multiple seeds).</span>`
+    : `<span class="bad">Max hit rate = ${(bestHit*100).toFixed(2)}% &lt; 51.28% (breakeven with payout 95%). Worst E[P&L] = ${(worstEv*100).toFixed(2)}%. Conclusion : no category has a significant edge. The score is purely descriptive, not predictive.</span>`;
+  html += `<div class="conclusion">${conclusion}<br><br>To validate: click again on ▶ BACKTEST to rerun with a new random seed. If the signal were real, results would be stable.</div>`;
+
+  resEl.innerHTML = html;
+  bar.style.width = '100%';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// --- LANCEMENT ----------------------------------------------
+
+document.getElementById('symbolSelect').addEventListener('change', (e) => {
+  state.symbol = e.target.value;
+  connect();
+});
+document.getElementById('btnBacktest').addEventListener('click', runBacktest);
+document.getElementById('btnClose').addEventListener('click', () => {
+  document.getElementById('modalMask').classList.remove('open');
+});
+document.getElementById('modalMask').addEventListener('click', (e) => {
+  if (e.target.id === 'modalMask') e.target.classList.remove('open');
+});
+
+initChart();
+initHistChart();
+connect();
+</script>
+</body>
+</html>
